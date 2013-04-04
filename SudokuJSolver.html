@@ -1,0 +1,256 @@
+<html>
+<title>SudokuJSolver</title>
+<script language="JavaScript">
+function sudoku_build(name=false){
+	var dimension = 9;
+	var str = '<table class="sudoku"><form name="' + (name == false ? 'sudoku' : name) +'"><input type="hidden" name="sudoku" value="' + (name == false ? 'sudoku' : name) + '" /><input type="hidden" name="dimension" value="' + dimension + '" />';
+	for(var x=1;x<=dimension;x++){
+		str = str + '<tr class="sudoku x' + x + '">' ;
+		for(var y=1;y<=dimension;y++){
+			str = str + '<td id="sudoku_field_' + x + '_' + y + '" class="sudoku field y' + y + ' x' + x + '">' + sudoku_html_field(x, y) + "</td>";
+		}
+		str = str + "</tr>";
+	}
+	str = str + '<tr><td><input type="reset" value="new" class="button" style="color: red;" onClick="sudoku_clear(this.form)" /></td><td><input type="button" onClick="sudoku_populate_only_suggestion(this.form);" value="check" class="button" /></td><td colspan="' + (dimension-5) + '"><input name="sudoku_locked" value="" class="note fullwidth" readonly="true" /></td>';
+	str = str + '<td><input id="lock_button" type="button" onClick="sudoku_lock(this.form);" value="lock" class="button"/></td><td><input type="button" onClick="sudoku_clear(this.form, this.form.sudoku_locked.value.split(\' \'));" value="clear" class="button"/></td><td><input type="button" onClick="sudoku_solve(this.form);" value="solve" class="button"/></td></tr>';
+	str = str + '<tr><td><input type="button" onClick="sudoku_populate_suggestions(this.form)" value="populate" class="button" /></td>';
+	str = str + '<td>excl.: </td><td><input type="button" onClick="sudoku_exclude_all(this.form, \'horizontal\');" value="horizontal" class="button" /></td><td><input type="button" onClick="sudoku_exclude_all(this.form, \'vertical\');" value="vertical" class="button" /></td><td><input type="button" onClick="sudoku_exclude_all(this.form, \'cube\');" value="cube" class="button" /></td>';
+	str = str + '<td>impl.:</td><td><input type="button" onClick="sudoku_impose_all(this.form, \'horizontal\');" value="horizontal" class="button" /></td><td><input type="button" onClick="sudoku_impose_all(this.form, \'vertical\');" value="vertical" class="button" /></td><td><input type="button" onClick="sudoku_impose_all(this.form, \'cube\');" value="cube" class="button" /></td>';
+	str = str + '<td colspan="' + (dimension - 5) + '"></td>';
+	str = str + '</tr>';
+	str = str + "</form></table>";
+	document.write(str);
+	/*sudoku_clear(document.forms[(name == false ? 'sudoku' : name)], document.forms[(name == false ? 'sudoku' : name)].elements['sudoku_locked'].value);*/
+}
+function sudoku_html_field(x, y, value=''){
+	return '<input name="sudoku_' + x + '_' + y + '_value" class="field" value="' + value + '" maxlength="1" /><br/><input name="sudoku_' + x + '_' + y + '_note" class="note" value=""  disabled="true" />';
+}
+function sudoku_lock(form, action=true){
+	var set = sudoku_all(form);
+	if(document.getElementById('lock_button').value == 'lock' || (action == 'lock' && action != true)){
+		form.elements['sudoku_locked'].value = '';
+		for(var i=0;i<set.length;i++){
+			if(form.elements['sudoku_' + co_x(set[i]) + '_' + co_y(set[i]) + '_value'].value != ''){
+				form.elements['sudoku_locked'].value = form.elements['sudoku_locked'].value + ' ' + set[i];
+				document.getElementById('sudoku_field_' + co_x(set[i]) + '_' + co_y(set[i])).setAttribute("class", 'sudoku field y' + co_y(set[i]) + ' x' + co_x(set[i]) + ' selected' );
+				form.elements['sudoku_' + co_x(set[i]) + '_' + co_y(set[i]) + '_note'].value = form.elements['sudoku_' + co_x(set[i]) + '_' + co_y(set[i]) + '_value'].value + ' locked';
+			}
+		}
+		document.getElementById('lock_button').value = 'unlock';
+	}
+	else{
+		/*var locked = form.elements['sudoku_locked'].value.split(' ');*/
+		for(var i=0;i<set.length;i++){
+			document.getElementById('sudoku_field_' + co_x(set[i]) + '_' + co_y(set[i])).setAttribute("class", 'sudoku field y' + co_y(set[i]) + ' x' + co_x(set[i]) /*+ ' selected' */ );
+			form.elements['sudoku_' + co_x(set[i]) + '_' + co_y(set[i]) + '_note'].value = '';
+		}
+		form.elements['sudoku_locked'].value = '';
+		document.getElementById('lock_button').value = 'lock';
+	} 
+}
+function sudoku_clear(form, keep=[]){
+	var set = sudoku_all(form);
+	for(var i=0;i<set.length;i++){
+		if(in_array(set[i], keep)){
+				document.getElementById('sudoku_field_' + co_x(set[i]) + '_' + co_y(set[i])).setAttribute("class", 'sudoku field y' + co_y(set[i]) + ' x' + co_x(set[i]) + ' selected' );
+				form.elements['sudoku_' + co_x(set[i]) + '_' + co_y(set[i]) + '_note'].value = form.elements['sudoku_' + co_x(set[i]) + '_' + co_y(set[i]) + '_value'].value + ' locked';		
+		}
+		else{
+			document.getElementById('sudoku_field_' + co_x(set[i]) + '_' + co_y(set[i])).setAttribute("class", 'sudoku field y' + co_y(set[i]) + ' x' + co_x(set[i]) /*+ ' selected' */ );
+			form.elements['sudoku_' + co_x(set[i]) + '_' + co_y(set[i]) + '_value'].value = '';
+			form.elements['sudoku_' + co_x(set[i]) + '_' + co_y(set[i]) + '_note'].value = '';
+		}
+	}
+}
+function sudoku_solve(form){
+	sudoku_populate_suggestions(form);
+	sudoku_exclude_horizontal(form);
+	sudoku_populate_only_suggestion(form);
+	sudoku_exclude_vertical(form);
+	sudoku_populate_only_suggestion(form);
+	sudoku_exclude_cube(form);
+	/* sudoku_exclude_all(form); */
+	sudoku_populate_only_suggestion(form);
+	sudoku_impose_all(form, 'cube');
+	sudoku_populate_only_suggestion(form);
+	sudoku_impose_all(form, 'horizontal');
+	sudoku_populate_only_suggestion(form);
+	sudoku_impose_all(form, 'vertical');
+	sudoku_populate_only_suggestion(form);
+	sudoku_exclude_all(form);
+	sudoku_populate_only_suggestion(form);
+}
+function sudoku_populate_suggestions(form){
+	var dimension = form.dimension.value;
+	var defaultset = '';
+	for(var z=1;z<=dimension;z++){
+		defaultset = defaultset + z;
+	}
+	for(var x=1;x<=dimension;x++){
+		for(var y=1;y<=dimension;y++){
+			if(form.elements['sudoku_' + x + '_' + y + '_value'].value == ''){
+				form.elements['sudoku_' + x + '_' + y + '_note'].value = defaultset;
+	}	}	}
+}
+function sudoku_populate_only_suggestion(form){
+	var dimension = form.dimension.value;
+	for(var x=1;x<=dimension;x++){
+		for(var y=1;y<=dimension;y++){
+			if(form.elements['sudoku_' + x + '_' + y + '_note'].value.length == 1){
+				form.elements['sudoku_' + x + '_' + y + '_value'].value = form.elements['sudoku_' + x + '_' + y + '_note'].value;
+					form.elements['sudoku_' + x + '_' + y + '_value'].setAttribute("class", class_edit(form.elements['sudoku_' + x + '_' + y + '_value'].getAttribute("class"), 'correct', 'fail'));
+			} else { if(form.elements['sudoku_' + x + '_' + y + '_note'].value.length == 0){
+					form.elements['sudoku_' + x + '_' + y + '_value'].setAttribute("class", class_edit(form.elements['sudoku_' + x + '_' + y + '_value'].getAttribute("class"), 'fail', 'correct'));
+	}	}	}	}
+}
+function class_edit(string, add=false, minus=false){
+	var set = string.split(' ');
+	var result = [];
+	for(var i=0;i<set.length;i++){
+		if(minus == false || set[i] != minus){ result[i] = set[i]; }
+	}
+	if(add != false && !in_array(add, set)){ result[i+1] = add; }
+	return result.join(' ');
+}
+function sudoku_value_exclude(str, minus){
+	var result = ''
+	for(var i=0;i<=str.length;i++){
+		if(str.substr(i, 1) != minus){ result = result + str.substr(i, 1); }
+	}
+	return result;
+}
+function sudoku_exclude_vertical(form){
+	var dimension = form.dimension.value;
+	for(var x=1;x<=dimension;x++){
+		for(var y=1;y<=dimension;y++){
+			for(var cx=1;cx<=dimension;cx++){
+				if(form.elements['sudoku_' + cx + '_' + y + '_value'].value != '' && x+':'+y != cx+':'+y){
+					form.elements['sudoku_' + x + '_' + y + '_note'].value = sudoku_value_exclude(form.elements['sudoku_' + x + '_' + y + '_note'].value, form.elements['sudoku_' + cx + '_' + y + '_value'].value);
+	}	}	}	}
+}
+function sudoku_exclude_horizontal(form){
+	var dimension = form.dimension.value;
+	for(var x=1;x<=dimension;x++){
+		for(var y=1;y<=dimension;y++){
+			for(var cy=1;cy<=dimension;cy++){
+				if(form.elements['sudoku_' + x + '_' + cy + '_value'].value != '' && x+':'+y != x+':'+cy){
+					form.elements['sudoku_' + x + '_' + y + '_note'].value = sudoku_value_exclude(form.elements['sudoku_' + x + '_' + y + '_note'].value, form.elements['sudoku_' + x + '_' + cy + '_value'].value);
+	}	}	}	}
+}
+function sudoku_exclude_cube(form){
+	var dimension = form.dimension.value;
+	for(var x=1;x<=dimension;x++){
+		for(var y=1;y<=dimension;y++){
+			for(var cx=(Math.floor((x-1)/3)*3)+1;cx<=((Math.floor((x-1)/3)+1)*3);cx++){
+				for(var cy=(Math.floor((y-1)/3)*3)+1;cy<=((Math.floor((y-1)/3)+1)*3);cy++){
+					if(form.elements['sudoku_' + cx + '_' + cy + '_value'].value != '' && x+':'+y != cx+':'+cy){
+						form.elements['sudoku_' + x + '_' + y + '_note'].value = sudoku_value_exclude(form.elements['sudoku_' + x + '_' + y + '_note'].value, form.elements['sudoku_' + cx + '_' + cy + '_value'].value);
+	}	}	}	}	}
+}
+function co_x(coordinate){ return parseInt(coordinate.substr(0,1)); }
+function co_y(coordinate){ return parseInt(coordinate.substr(2,1)); }
+function xy(x, y){ return x + ':' + y;}
+function sudoku_exclude(form, current, set){
+	for(var i=0;i<set.length;i++){
+		if(form.elements['sudoku_' + co_x(set[i]) + '_' + co_y(set[i]) + '_value'].value != '' && co_x(current)+':'+co_y(current) != co_x(set[i])+':'+co_y(set[i])){
+			form.elements['sudoku_' + co_x(current) + '_' + co_y(current) + '_note'].value = sudoku_value_exclude(form.elements['sudoku_' + co_x(current) + '_' + co_y(current) + '_note'].value, form.elements['sudoku_' + co_x(set[i]) + '_' + co_y(set[i]) + '_value'].value);
+	}	}
+}
+function sudoku_impose(form, current, set){
+	var subset = []; var j = 0;
+	for(var i=0;i<set.length;i++){
+		if(current != set[i]){
+			var note = form.elements['sudoku_' + co_x(set[i]) + '_' + co_y(set[i]) + '_note'].value;
+			for(var n=0;n<note.length;n++){
+				if(isInt(note[n]) && !in_array(note[n], subset)){ subset[j++] = note[n]; }
+			}
+		} 
+	}
+	var curval = form.elements['sudoku_' + co_x(current) + '_' + co_y(current) + '_note'].value;
+	if(curval.substr(2) != 'locked'){
+		for(var i=0;i<curval.length;i++){
+			if(!in_array(curval.substr(i,1), subset) && isInt(curval.substr(i,1))){ form.elements['sudoku_' + co_x(current) + '_' + co_y(current) + '_note'].value = curval.substr(i,1); }
+	}	}
+}
+function sudoku_exclude_all(form, action=true){
+	var set = sudoku_all(form);
+	for(i=0;i<set.length;i++){
+		if(action == 'cube' || action == true){ sudoku_exclude(form, set[i], sudoku_cube(form, set[i])); }
+		if(action == 'horizontal' || action == true){ sudoku_exclude(form, set[i], sudoku_horizontal(form, set[i])); }
+		if(action == 'vertical' || action == true){ sudoku_exclude(form, set[i], sudoku_vertical(form, set[i])); }
+	}
+}
+function sudoku_impose_all(form, action=true){
+	var set = sudoku_all(form);
+	for(i=0;i<set.length;i++){
+		if(action == 'cube' || action == true){ sudoku_impose(form, set[i], sudoku_cube(form, set[i])); }
+		if(action == 'horizontal' || action == true){ sudoku_impose(form, set[i], sudoku_horizontal(form, set[i])); }
+		if(action == 'vertical' || action == true){ sudoku_impose(form, set[i], sudoku_vertical(form, set[i])); }
+	}
+}
+function sudoku_horizontal(form, current){
+	var set = [];
+	var dimension = form.dimension.value;
+	for(var i=1;i<=dimension;i++){
+		set[i-1] = xy(co_x(current), i);
+	}
+	return set;
+}
+function sudoku_vertical(form, current){
+	var set = [];
+	var dimension = form.dimension.value;
+	for(var i=1;i<=dimension;i++){
+		set[i-1] = xy(i, co_y(current));
+	}
+	return set;
+}
+function sudoku_cube(form, current){
+	var set = []; var i = 0;
+	for(var x=(Math.floor((co_x(current)-1)/3)*3)+1;x<=((Math.floor((co_x(current)-1)/3)+1)*3);x++){
+		for(var y=(Math.floor((co_y(current)-1)/3)*3)+1;y<=((Math.floor((co_y(current)-1)/3)+1)*3);y++){
+			set[i] = xy(x, y);
+			i++;
+		}
+	}
+	return set;
+}
+function sudoku_all(form){
+	var set = []; var i = 0;
+	var dimension = form.dimension.value;
+	for(var x=1;x<=dimension;x++){
+		for(var y=1;y<=dimension;y++){
+			set[i] = xy(x, y);
+			i++;
+		}
+	}
+	return set;
+}
+function in_array(needle, haystack){
+	for(var key in haystack){
+		if(needle === haystack[key]){ return true; }
+	}
+	return false;
+}
+function isInt(value){
+	return !isNaN(parseInt(value,10)) && (parseFloat(value,10) == parseInt(value,10));
+}
+</script>
+<style>
+.sudoku .field { width: 50px; font-size: 24pt; color: black; }
+.sudoku .note { width: 50px; font-size: 7pt; color: gray; }
+.sudoku .button { width: 50px; font-size: 10pt; font-weight: bold; }
+.sudoku td.field { border-top: 1px dotted gray; border-left: 1px dotted gray; }
+.sudoku .field.correct, .sudoku .field.fail.correct { width: 50px; font-size: 24pt; color: green; }
+.sudoku .field.fail, .sudoku .field.correct.fail { width: 50px; font-size: 24pt; color: red; }
+.sudoku td.field.selected, .sudoku td.field.selected .field, .sudoku td.field.selected .note { background-color: #BBBBBB; font-weight: bold; text-align: center; }
+.sudoku .field.x1, .sudoku .field.x4, .sudoku .field.x7 { border-top: 2px solid black; }
+.sudoku .field.x9 { border-bottom: 2px solid black; }
+.sudoku .field.y1, .sudoku .field.y4, .sudoku .field.y7 { border-left: 2px solid black; }
+.sudoku .field.y9 { border-right: 2px solid black; }
+.sudoku td, .sudoku input.field { text-align: center; }
+.sudoku .fullwidth { width: 100%; }
+</style>
+<body>
+<script>sudoku_build();</script>
+</body>
+</html>
